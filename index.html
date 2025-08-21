@@ -1,62 +1,110 @@
 <!DOCTYPE html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Chat com Áudio + IA</title>
+  </head>
+  <body>
+    <h2>Chat com Áudio</h2>
 
-<head>
-  <meta charset="UTF-8">
-  <title>Chat com Áudio + IA</title>
-</head>
+    <button id="startBtn">🎙️ Gravar</button>
+    <button id="stopBtn" disabled>⏹️ Parar</button>
 
-<body>
-  <h2>Chat com Áudio</h2>
+    <ul id="messages"></ul>
 
-  <button id="startBtn">🎙️ Gravar</button>
-  <button id="stopBtn" disabled>⏹️ Parar</button>
+    <script>
+      let mediaRecorder;
+      let audioChunks = [];
+      let stream;
+      let recording = false;
+      let sending = false;
 
-  <ul id="messages"></ul>
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const messages = document.getElementById("messages");
 
-  <script>
-    let mediaRecorder;
-    let audioChunks = [];
-
-    const startBtn = document.getElementById("startBtn");
-    const stopBtn = document.getElementById("stopBtn");
-    const messages = document.getElementById("messages");
-
-    startBtn.onclick = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-
-      audioChunks = [];
-      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+      // Envia o áudio para o backend
+      const sendAudio = async (blob) => {
         const formData = new FormData();
-        formData.append("file", audioBlob, "recording.webm");
+        formData.append("file", blob, "recording.webm");
 
-        // Envia para o backend PHP
-        const response = await fetch("backend.php", {
-          method: "POST",
-          body: formData
-        });
+        try {
+          const response = await fetch("backend.php", {
+            method: "POST",
+            body: formData,
+          });
 
-        const result = await response.json();
-        const li = document.createElement("li");
-        li.textContent = "IA: " + result.reply;
-        messages.appendChild(li);
+          const result = await response.json();
+
+          if (result.reply) {
+            const li = document.createElement("li");
+            li.textContent = "IA: " + result.reply;
+            messages.appendChild(li);
+          } else {
+            console.error("Erro na IA:", result);
+          }
+        } catch (error) {
+          console.error("Erro ao enviar áudio:", error);
+        }
       };
 
-      mediaRecorder.start();
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-    };
+      // Inicia uma nova gravação
+      const startRecording = () => {
+        mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+        audioChunks = [];
 
-    stopBtn.onclick = () => {
-      mediaRecorder.stop();
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-    };
-  </script>
-</body>
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            audioChunks.push(e.data);
+          }
+        };
 
+        mediaRecorder.onstop = async () => {
+          if (audioChunks.length === 0) return;
+
+          const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+          audioChunks = [];
+          await sendAudio(audioBlob);
+
+          // Se ainda estiver gravando, reinicia automaticamente
+          if (recording) {
+            startRecording();
+            mediaRecorder.start();
+            setTimeout(() => {
+              if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+              }
+            }, 5000); // Grava 10s, envia, reinicia
+          }
+        };
+
+        mediaRecorder.start();
+        setTimeout(() => {
+          if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+          }
+        }, 5000);
+      };
+
+      // Inicia o stream e a primeira gravação
+      startBtn.onclick = async () => {
+        recording = true;
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        startRecording();
+
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+      };
+
+      // Para tudo
+      stopBtn.onclick = () => {
+        recording = false;
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+        }
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      };
+    </script>
+  </body>
 </html>

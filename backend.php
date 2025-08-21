@@ -1,6 +1,29 @@
 <?php
 header('Content-Type: application/json');
 
+class MessageCache
+{
+    private $cacheFile;
+
+    public function __construct($file)
+    {
+        $this->cacheFile = $file;
+    }
+
+    public function getMessage()
+    {
+        if (file_exists($this->cacheFile)) {
+            return file_get_contents($this->cacheFile);
+        }
+        return "";
+    }
+
+    public function setMessage($message)
+    {
+        file_put_contents($this->cacheFile, $message);
+    }
+}
+
 // Verifica se veio um arquivo
 if (!isset($_FILES['file'])) {
     echo json_encode(["error" => "Nenhum arquivo recebido"]);
@@ -10,7 +33,7 @@ if (!isset($_FILES['file'])) {
 $audioFile = $_FILES['file']['tmp_name'];
 
 // Configuração da API
-$apiKey = "API_KEY";
+$apiKey = "KEY";
 
 // 1. Transcreve o áudio com Whisper
 $ch = curl_init("https://api.openai.com/v1/audio/transcriptions");
@@ -34,7 +57,13 @@ if (isset($transData['error'])) {
     exit;
 }
 
+$lastMessageCache = new MessageCache('last_message_cache.txt');
+$lastResponseCache = new MessageCache('last_response_cache.txt');
+$lastMessage = $lastMessageCache->getMessage();
+$lastResponse = $lastResponseCache->getMessage();
+
 $userText = $transData['text'];
+$lastMessageCache->setMessage($userText);
 
 // 2. Envia a transcrição para o ChatGPT
 $chatCh = curl_init("https://api.openai.com/v1/chat/completions");
@@ -47,7 +76,14 @@ curl_setopt($chatCh, CURLOPT_POST, true);
 curl_setopt($chatCh, CURLOPT_POSTFIELDS, json_encode([
     "model" => "gpt-4o-mini",
     "messages" => [
-        ["role" => "user", "content" => $userText]
+        [
+            "role" => "user",
+            "content" => "
+Responda à seguinte conversa mensagem em Português:
+Mansagem anterior: $lastMessage
+Nova mensagem: $userText
+"
+        ]
     ]
 ]));
 
@@ -56,6 +92,7 @@ curl_close($chatCh);
 
 $chatData = json_decode($chatResponse, true);
 $reply = $chatData['choices'][0]['message']['content'] ?? "Erro ao gerar resposta";
+$lastResponseCache->setMessage($reply);
 
 echo json_encode([
     "transcript" => $userText,
