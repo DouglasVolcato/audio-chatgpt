@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Chat com Áudio + IA</title>
+</head>
+
+<body>
+  <h2>Chat com Áudio</h2>
+
+  <button id="startBtn">🎙️ Gravar</button>
+  <button id="stopBtn" disabled>⏹️ Parar</button>
+
+  <ul id="messages"></ul>
+
+  <script>
+    let mediaRecorder;
+    let audioChunks = [];
+
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const messages = document.getElementById("messages");
+
+    startBtn.onclick = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+
+      audioChunks = [];
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+        const formData = new FormData();
+        formData.append("file", audioBlob, "recording.webm");
+
+        // Envia para o backend PHP
+        const response = await fetch("backend.php", {
+          method: "POST",
+          body: formData
+        });
+
+        const result = await response.json();
+        const li = document.createElement("li");
+        li.textContent = "IA: " + result.reply;
+        messages.appendChild(li);
+      };
+
+      mediaRecorder.start();
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+    };
+
+    stopBtn.onclick = () => {
+      mediaRecorder.stop();
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    };
+  </script>
+</body>
+
+</html>
